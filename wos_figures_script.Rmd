@@ -1,0 +1,169 @@
+---
+title: "WoS_figures_script"
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+# Load packages
+library(tidyverse)
+library(ggplot2)
+library(FinCal) #
+library(gridExtra)
+library(cowplot) 
+library(here)
+```
+## web of science figure
+
+Data load and clean up
+```{r}
+# Load  data
+
+hwc <- read_csv(here('data','hwconflict_wos_search.csv')) %>% mutate(TM = replace(TM, TM == "B", "M"))# Convert "Both" (B) to "Marine" (M) in TM column
+
+
+
+# Summarize number of publications per year and ecosystem type
+hwc_summary <- hwc %>% 
+  group_by(Year, TM) %>% 
+  summarise(n = n(), .groups = "drop")
+
+# Create missing Marine data (1991-2007) with zero publications
+M0 <- tibble(Year = 1991:2007, TM = "M", n = 0)
+
+# Create missing Terrestrial data (1992-1996) with zero publications
+T0 <- tibble(Year = 1992:1996, TM = "T", n = 0)
+
+# Combine observed and missing data
+hwc_complete <- bind_rows(hwc_summary, M0, T0)
+
+# Summarize total publications by ecosystem type
+total_marine_pub <- hwc_complete %>%
+  filter(TM=="M") %>% summarize(total=sum(n)) %>% 
+  pull(total)
+
+total_terr_pub <- hwc_complete %>%
+  filter(TM=="T") %>% summarize(total=sum(n)) %>% 
+  pull(total)
+
+```
+
+```{r}
+# Plot publication trends over time
+hwc_plot <- hwc_complete %>% 
+  filter(Year < 2018) %>% 
+  ggplot(aes(x = Year, y = n, color = TM)) +
+  geom_line(linewidth=1.5) +
+  theme_classic() +
+  scale_x_continuous("Year", breaks = c(1990, 2000, 2010, 2017)) +
+  labs(y = "Number of Publications") +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+   # legend.position = c(0.2, 0.9),
+    plot.margin = margin(10, 10, 3, 3, "mm")
+  ) +
+  scale_color_manual(labels = c("Marine", "Terrestrial"), values = c("skyblue4", "chocolate4")) 
+ # annotate("text", x = 2018, y = 124, label = "running total: 661", size = 4.5) +
+ # annotate("text", x = 2018, y = 20, label = "running total: 70", size = 4.5)
+
+hwc_plot
+
+```
+
+```{r}
+# Load depredation data
+dep <-  read_csv(here('data','depredation_wos.csv'))
+
+# Summarize depredation publications by year and ecosystem type
+dep_summary <- dep %>% 
+  group_by(Year, TM) %>% 
+  summarise(n = n(), .groups = "drop") %>% mutate(TM = replace(TM, TM == "Aq", "Fish")) %>%
+  group_by(Year, TM) %>%
+  summarise(n = sum(n), .groups = "drop")
+
+# Adjust depredation data for visualization
+dep_adjusted <- dep_summary %>%
+  pivot_wider(names_from = TM, values_from = n, values_fill = 0) %>%
+  mutate(Terrestrial = Tot - Fish) %>%
+  pivot_longer(cols = c(Fish, Terrestrial), names_to = "TF", values_to = "n")
+```
+
+```{r}
+# Plot depredation trends
+dep_plot <- dep_adjusted %>% 
+  filter(Year >= 1990 & Year < 2018) %>% 
+  ggplot(aes(x = Year, y = n, color = TF)) +
+  geom_line(linewidth = 1.5) +
+  theme_classic() +
+  scale_x_continuous("Year", breaks = c(1990, 2000, 2010, 2017)) +
+  labs(y = "Number of Publications") +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = c(0.4, 0.8)
+  ) +
+  scale_color_manual(labels = c("Depredation: Fisheries & Aquaculture", "Depredation"),
+                     values = c("dodgerblue4", "chocolate1"))
+
+dep_plot
+
+
+```
+
+```{r}
+# Load conflict  data from Chapman & McPhee 2016, Hanselman et al 2018, Peterson et al 2013,
+conflict <- read_csv(here("data","conflict_lit_data.csv"))
+
+# Split conflict increase data by type
+c_proportion <- conflict %>% filter(code %in% c("DSW", "DKW"))
+c_number <- conflict %>% filter(code %in% c("SA", "HLL"))
+
+```
+
+```{r}
+# Plot shark attack trends
+shark_attack_plot <- c_number %>% 
+  filter(code == "SA") %>% 
+  ggplot(aes(x = year, y = N, color = code.det)) +
+  geom_line(linewidth=1.5) +
+  theme_classic() +
+  labs(y = "Number of shark attacks") +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.position = c(0.2, 0.8)
+  ) +
+  scale_color_manual(labels = c("USA", "Australia"), values = c("dodgerblue4", "chocolate3"))
+
+shark_attack_plot
+
+```
+
+```{r}
+# Plot depredation proportion trends
+dep_proportion_plot <- c_proportion %>% 
+  ggplot(aes(x = year, y = N, color = code)) +
+  geom_line(linewidth = 1.5) +
+  theme_classic() +
+  labs(y = "Proportion of depredation events") +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 11),
+    legend.title = element_blank(),
+     legend.position = c(0.2, 0.8)
+  )+
+   scale_color_manual(labels = c("killer whale", "sperm whale"), values = c("black","darkgray"))
+
+dep_proportion_plot
+```
